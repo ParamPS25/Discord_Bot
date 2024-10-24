@@ -7,6 +7,8 @@ dotenv.config();
 const User = require('./models/userModel.js');
 const Task = require('./models/taskModel.js');
 
+require('./server');
+
 const client = new Client({
     intents : [
         GatewayIntentBits.Guilds,
