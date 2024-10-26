@@ -38,6 +38,9 @@ client.on('messageCreate',async (message) =>{
 
     try{
         switch(command){
+            case 'hi':
+                await Introduce(message)
+                break;
             case 'register':
                 //console.log(message);            // message -> will have required authorid,name,pfp, etc... of current user who initiated the message
                  await handleRegister(message)
@@ -54,6 +57,15 @@ client.on('messageCreate',async (message) =>{
             case 'help':
                 await handleHelp(message)
                 break;
+            case 'done':
+                await handleComplete(message,args)
+                break;
+            case 'weekstats':                   // try to make it general purpose !stats week  !stats month
+                await handleWeeklyStats(message)
+                break;
+            default:
+                message.reply('Unknown command. Type !help to see all available commands.');
+                break;
         }
     }
     catch(e){
@@ -61,6 +73,18 @@ client.on('messageCreate',async (message) =>{
         message.reply('An error occurred while processing your command.');
     }
 })
+
+// introduce and greet
+async function Introduce(message) {
+    const userName = message.author.username;
+    const embed = new EmbedBuilder()
+        .setColor('#00ff00')
+        .setTitle(`Hello, ${userName}! 👋`)
+        .setDescription('I\'m TaskO-Bot here to help you stay organized and productive! You can register by typing `!register` or see what else I can do with `!help`.')
+        .setFooter({ text: 'Let\'s get things done together!' });
+
+    message.reply({ embeds: [embed] });
+}
 
 // register User
 async function handleRegister(message){
@@ -195,13 +219,14 @@ async function handleListTasks(message){
         .setColor('#00ff00')
         .setTitle('here is the list of all your tasks :')
         .setDescription(`Your tasks : total ${user.tasks.length}`)
+        .setImage('https://res.cloudinary.com/dgdqt0m8f/image/upload/v1728173004/hr3ichzvbrtarts62aiu.jpg')
 
         const sortedTasks = user.tasks
         .sort((a,b)=>b.createdAt - a.createdAt)             //[11,2,22,1].sort((a, b) => a - b) Sorts an array in place. This method mutates the array and returns a reference to the same array.
 
         sortedTasks.forEach((task,index) => {
             embed.addFields({
-                name : `${index + 1}. Task ${task.taskId}`,
+                name : `${index + 1}. Task ${task.taskId} - ${task.completed ? "✅ Completed" :"❌ Not Completed"}`,
                 value: `${task.description}\nCreated: ${task.createdAt.toLocaleDateString()}`,
                 inline: false
             });
@@ -229,11 +254,110 @@ async function handleHelp(message){
       { name: '!remove <task_id>', value: 'Remove a task by its ID', inline: false },
       { name: '!list', value: 'Show all your tasks', inline: false },
       { name: '!help', value: 'Show this help message', inline: false },
-    );
+      { name: '!done <task-id>', value: 'to mark the task as completed.' },
+      { name: '!weekstats', value: 'View your weekly task statistics.'},
+    )
+    .setFooter({ text: 'Stay productive and have fun with TaskO-Bot!' });
 
     message.reply({ embeds: [embed] });
 }
 
+// to mark complete
+async function handleComplete(message, args) {
+    try {
+        const user = await User.findOne({ userId: message.author.id });
+        if (!user) {
+            return message.reply("You are not registered. Type !register");
+        }
+
+        const taskId = args[0];
+        const task = await Task.findOneAndUpdate(
+            { taskId, userId: message.author.id },
+            { completed: true , completedAt: new Date()} // updating completedAt to use for weekly stats 
+        );
+
+        if (!task) {
+            return message.reply(`Task ${taskId} not found.`);
+        }
+
+        message.reply(`Task ${taskId} marked as completed.`);
+    } catch (e) {
+        console.error(e.message);
+        message.reply('Failed to mark task as complete. Please try again.');
+    }
+}
+
+// weekly stats
+async function handleWeeklyStats(message){
+    
+    try{
+    const user = await User.findOne({userId : message.author.id})
+    .populate('tasks')
+
+    if(!user){
+        return message.reply("You are not registered. Type !register");
+    }
+
+    const now = new Date();
+    const weeksAgo = new Date();
+
+    weeksAgo.setDate(now.getDate() - 7);
+
+    const thisWeekTasks = user.tasks.filter((task)=>task.createdAt >= weeksAgo);
+    const thisWeekCompletedTasks = user.tasks.filter((task)=>task.completed && task.completedAt >= weeksAgo)
+
+    const efficiency = ((thisWeekCompletedTasks.length / thisWeekTasks.length) * 100);
+
+    const embed = new EmbedBuilder()
+     .setColor('#0000ff')
+     .setTitle('Weekly Stats')
+     .setImage('https://res.cloudinary.com/dgdqt0m8f/image/upload/v1729977493/WhatsApp_Image_2024-10-27_at_02.39.49_sdj0t5.jpg')
+     .setFields(
+        { name: 'Tasks Added', value: `${thisWeekTasks.length}`, inline: true },
+        { name: 'Tasks Completed', value: `${thisWeekCompletedTasks.length}`, inline: true },
+        { name: 'Efficiency', value: `${efficiency}%`, inline: true }
+     )
+     .setTimestamp()
+
+     thisWeekTasks.forEach((task, index) => {
+        embed.addFields({
+            name: `${index + 1}. ${task.description} (${task.taskId}) \n ${task.completed ? "✅ Completed" : "❌ Not Completed"} `,
+            value: ` \t Created: ${task.createdAt.toLocaleDateString()}`,
+            inline: false
+        });
+    });   
+    
+    
+    // message at end wrt efficiency 
+    
+    if (efficiency > 70) {
+        embed.addFields({
+            name: 'Motivation',
+            value: `Keep going! You're almost there. Only ${100 - efficiency.toFixed(2)}% left.`,
+            inline: false
+        });
+    } else if (efficiency <= 70 && efficiency > 40) {
+        embed.addFields({
+            name: 'Motivation',
+            value: `You're making progress, but there's room for improvement. Let's aim for a higher completion rate!`,
+            inline: false
+        });
+    } else {
+        embed.addFields({
+            name: 'Motivation',
+            value: `Don't get discouraged. Take it one step at a time. Consistency is key.`,
+            inline: false
+        });
+    }
+    
+    message.reply({ embeds: [embed] });
+
+    }catch(e){
+    console.error(e.message);
+    message.reply('Failed to display weekly Stats. Please try again.');
+    }
+     
+}
 
 
 client.login(process.env.DISCORD_TOKEN);

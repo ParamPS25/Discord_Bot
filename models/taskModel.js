@@ -20,6 +20,10 @@ const taskSchema = mongoose.Schema({
         type: Boolean,
         default: false 
     },
+    completedAt: { 
+        type: Date, 
+        default: null 
+    },
 
     user: { 
         type: mongoose.Schema.Types.ObjectId, ref: 'User' 
